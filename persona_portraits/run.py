@@ -1,13 +1,11 @@
-"""Generate DREAM portraits from the Persona Modality text records."""
+"""Generate enhanced DREAM profiles from the Persona Modality text records."""
 
 import argparse
-import base64
 import json
 import os
 import random
 import re
 import runpy
-import struct
 import subprocess
 import sys
 import tempfile
@@ -184,23 +182,25 @@ def prepare(entries):
     return config, fallbacks
 
 
-def render(entry, fallback, config, out, quality, request):
+def render(entry, fallback, config, out, request):
     persona_id = entry["id"]
     path = out / str(persona_id)
     metadata_path = path / "metadata.json"
-    png_path = path / "portrait.png"
     source = {"persona_id": persona_id, "persona": entry["persona"]}
     settings = {
-        "text_model": TEXT_MODEL, "image_model": IMAGE_MODEL, "size": SIZE, "quality": quality,
+        "text_model": TEXT_MODEL,
         "source_blob": SOURCE_BLOB, "dream_commit": DREAM_COMMIT,
     }
     if metadata_path.exists():
         metadata = read_json(metadata_path)
-        if metadata["source"] != source or metadata["settings"] != settings:
+        compared_settings = ("text_model", "source_blob", "dream_commit")
+        if metadata["source"] != source or any(
+            metadata["settings"].get(name) != settings[name] for name in compared_settings
+        ):
             raise ValueError("Existing output has different inputs or settings; use a new output directory")
-        if png_path.exists() and "image_usage" in metadata:
-            check_png(png_path.read_bytes())
-            return "already generated"
+        if "profile" in metadata:
+            validate_profile(metadata["profile"], source, config)
+            return "enhanced already generated"
     else:
         metadata = {"source": source, "settings": settings, "synthetic_fallback": fallback}
 
@@ -212,40 +212,13 @@ def render(entry, fallback, config, out, quality, request):
         metadata.update(profile=profile, expansion_usage=usage, expansion_model=model)
         write_json(metadata_path, metadata)
 
-    if "profile_prompt" not in metadata:
-        template = (HERE / "portrait.txt").read_text(encoding="utf-8")
-        prompt = template + "\n" + json.dumps(metadata["profile"], ensure_ascii=False, indent=2)
-        text, usage, model = generate_text(request, prompt)
-        label, separator, description = text.strip().partition(":")
-        description = description.strip()
-        if label != "PROFILE_PROMPT" or not separator or not description or len(description.split()) >= 300:
-            raise ValueError("Invalid DREAM portrait prompt")
-        metadata.update(profile_prompt=description, portrait_prompt_usage=usage, portrait_prompt_model=model)
-        write_json(metadata_path, metadata)
-
-    result = request("images/generations", {
-        "model": IMAGE_MODEL, "prompt": metadata["profile_prompt"], "n": 1,
-        "size": SIZE, "quality": quality, "output_format": "png",
-    })
-    png = base64.b64decode(result["data"][0]["b64_json"], validate=True)
-    check_png(png)
-    write_bytes(png_path, png)
-    metadata["image_usage"] = result.get("usage")
-    write_json(metadata_path, metadata)
-    return "generated"
-
-
-def check_png(png):
-    if len(png) < 24 or png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
-        raise ValueError("Image response is not a PNG")
-    if struct.unpack(">II", png[16:24]) != (1024, 1024):
-        raise ValueError("Image response has unexpected dimensions")
+    return "enhanced generated"
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=HERE / "out")
-    parser.add_argument("--quality", choices=("medium", "high"), default="medium")
+    parser.add_argument("--quality", choices=("medium", "high"), help=argparse.SUPPRESS)
     selection = parser.add_mutually_exclusive_group()
     selection.add_argument("--all", action="store_true", help="Process all 200 personas")
     selection.add_argument("--ids", type=int, nargs="+", help="Process specific persona IDs")
@@ -263,7 +236,7 @@ def main():
         for persona_id in ids:
             entry = available[persona_id]
             make_expansion({"persona_id": persona_id, "persona": entry["persona"]}, fallbacks[persona_id], config)
-        print(f"Validated {len(ids)} inputs at {SIZE}, quality={args.quality}.")
+        print(f"Validated {len(ids)} inputs for enhanced profiles.")
         return 0
 
     key = os.environ.get("OPENAI_API_KEY")
@@ -275,7 +248,7 @@ def main():
             return tracked_request(key, args.output / "usage.jsonl", persona_id, endpoint, payload)
 
         try:
-            result = render(available[persona_id], fallbacks[persona_id], config, args.output, args.quality, request)
+            result = render(available[persona_id], fallbacks[persona_id], config, args.output, request)
             print(f"{persona_id}: {result}", flush=True)
         except (KeyError, OSError, RuntimeError, TypeError, ValueError) as exc:
             print(f"Persona {persona_id}, stopped: {exc}", file=sys.stderr)
