@@ -11,6 +11,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -58,7 +59,7 @@ def openai_request(key, endpoint, payload):
     )
     try:
         with urlopen(request, timeout=300) as response:
-            return json.load(response)
+            return json.load(response), response.headers.get("x-request-id")
     except HTTPError as exc:
         detail = ""
         if exc.code not in (401, 403):
@@ -67,7 +68,40 @@ def openai_request(key, endpoint, payload):
                 detail = ": " + str(error.get("message", ""))[:500]
             except (ValueError, KeyError, TypeError):
                 pass
-        raise RuntimeError(f"{endpoint}: HTTP {exc.code}{detail}") from None
+        message = f"{endpoint}: HTTP {exc.code}{detail}"
+        raise RuntimeError(message.replace(key, "[redacted]")) from None
+
+
+def tracked_request(key, ledger, persona_id, endpoint, payload):
+    if endpoint == "images/generations":
+        stage = "image"
+    elif "text" in payload:
+        stage = "expansion"
+    else:
+        stage = "portrait_prompt"
+    record = {
+        "persona_id": persona_id, "stage": stage, "requested_model": payload["model"],
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+    if stage == "image":
+        record.update(quality=payload["quality"], size=payload["size"])
+    ledger.parent.mkdir(parents=True, exist_ok=True)
+    with ledger.open("a", encoding="utf-8") as stream:
+        try:
+            result, request_id = openai_request(key, endpoint, payload)
+        except (OSError, RuntimeError, ValueError) as exc:
+            record.update(status="request_error", error_type=type(exc).__name__)
+            raise
+        else:
+            record.update(
+                status=result.get("status", "returned"),
+                response_model=result.get("model"),
+                request_id=request_id,
+                usage=result.get("usage"),
+            )
+            return result
+        finally:
+            stream.write(json.dumps(record) + "\n")
 
 
 def generate_text(request, prompt, *, structured=False):
@@ -236,10 +270,10 @@ def main():
     if not key:
         parser.error("Set OPENAI_API_KEY in your environment to enable generation")
 
-    def request(endpoint, payload):
-        return openai_request(key, endpoint, payload)
-
     for persona_id in ids:
+        def request(endpoint, payload):
+            return tracked_request(key, args.output / "usage.jsonl", persona_id, endpoint, payload)
+
         try:
             result = render(available[persona_id], fallbacks[persona_id], config, args.output, args.quality, request)
             print(f"{persona_id}: {result}", flush=True)

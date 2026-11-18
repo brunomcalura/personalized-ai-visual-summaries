@@ -44,3 +44,16 @@ Outputs default to `persona_portraits/out/<id>/portrait.png`
 with the source, profile, prompt, model settings, and available usage data
 in `metadata.json`. Use one process per output directory. Running the same
 command again skips completed portraits and reuses saved intermediate results.
+
+Each API attempt is recorded in `usage.jsonl` with its stage, persona ID,
+request ID when available, and the token usage returned by OpenAI. Run the
+report without calling the API.
+
+```powershell
+python persona_portraits/usage.py persona_portraits/out/usage.jsonl
+```
+
+The report estimates USD at OpenAI Standard rates and lists attempts with
+unavailable usage separately. Reasoning tokens are already included in text
+output tokens. The report covers recorded usage and may differ from the
+provider invoice, for example if a connection drops before usage is returned.
