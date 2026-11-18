@@ -36,3 +36,9 @@ The report includes historical attempts grouped by expansion, portrait prompt
 and image generation. For enhanced-only costs, use the expansion group.
 OpenAI Standard USD prices are used. Missing usage is flagged.
 Reasoning tokens are included in output tokens.
+
+Occupation or location wording that is absent literally from personal_data is
+recorded in metadata.json under validation_warnings for semantic review.
+This lexical check is advisory because the expansion may use paraphrases.
+ID, age, gender, allowed labels and narrative structure checks still stop
+on invalid output. The original persona remains available in source.

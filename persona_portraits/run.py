@@ -167,12 +167,18 @@ def validate_profile(profile, entry, config):
         if attributes[field] not in allowed:
             raise ValueError(f"Invalid {field}: {attributes[field]}")
     biography = normalized_words(" ".join(profile["profile_narrative"]["personal_data"]))
-    if normalized_words(occupation) not in biography or normalized_words(location) not in biography:
-        raise ValueError("Expanded biography must include the source occupation and location")
+    warnings = []
+    for name, value in (("occupation", occupation), ("location", location)):
+        if normalized_words(value) not in biography:
+            warnings.append({
+                "field": name, "source_value": value,
+                "reason": "Exact wording not found in personal_data; semantic review required",
+            })
     for section in SECTIONS:
         details = profile["profile_narrative"][section]
         if not isinstance(details, list) or not all(isinstance(item, str) for item in details) or len(details) < 5:
             raise ValueError(f"Expected at least five entries in {section}")
+    return warnings
 
 
 def prepare(entries):
@@ -207,8 +213,10 @@ def render(entry, fallback, config, out, request):
         ):
             raise ValueError("Existing output has different inputs or settings; use a new output directory")
         if "profile" in metadata:
-            validate_profile(metadata["profile"], source, config)
-            return "enhanced already generated"
+            warnings = validate_profile(metadata["profile"], source, config)
+            metadata["validation_warnings"] = warnings
+            write_json(metadata_path, metadata)
+            return "enhanced already generated" + (" (review wording)" if warnings else "")
     else:
         metadata = {"source": source, "settings": settings, "synthetic_fallback": fallback}
 
@@ -224,11 +232,14 @@ def render(entry, fallback, config, out, request):
         if pending["source"] != source or pending["settings"] != settings:
             raise ValueError("Saved expansion response has different inputs or settings")
         profile = json.loads(pending["text"])
-        validate_profile(profile, source, config)
-        metadata.update(profile=profile, expansion_usage=pending["usage"], expansion_model=pending["model"])
+        warnings = validate_profile(profile, source, config)
+        metadata.update(
+            profile=profile, expansion_usage=pending["usage"], expansion_model=pending["model"],
+            validation_warnings=warnings,
+        )
         write_json(metadata_path, metadata)
 
-    return "enhanced generated"
+    return "enhanced generated" + (" (review wording)" if metadata["validation_warnings"] else "")
 
 
 def main():
