@@ -1,0 +1,147 @@
+You are an expert in psychological inference and character profiling.
+
+Your task is to extend the personality profile of one character based on a single persona entry. The input below contains everything you need to perform a deep and creative expansion of the character's persona.
+
+Important constraints (read carefully):
+- Use the original persona as the sole source of facts. Preserve stated age, gender identity, occupation, and location.
+- If an attribute is NOT inferable, you MUST use the provided FALLBACK VALUES for that character.
+- However, if a fallback value would directly CONTRADICT the character's own content (e.g., years of full-time work vs. age 14), you MUST ADJUST the fallback to the nearest coherent value that preserves the original information (adjust the fallback, not the original persona).
+- Keep labels clean and consistent. Avoid stereotypes.
+
+Inference-first rule (CRITICAL):
+- For EACH attribute in profile_struct, attempt to INFER it strictly from the character's OWN content (their original persona text).
+- “Inferable” means there is clear, direct evidence or an unambiguous implication in the character's own content.
+- NEVER fabricate values outside the fallback when not inferable. Do not use “unknown”, “N/A”, ranges, or multiple options.
+- Nationality and residence_country: only use an inferred country when it's explicitly stated or unambiguously implied in the character's own content. Otherwise, use the EXACT fallback value.
+- Ethnicity: choose from the allowed labels only when clearly supported by the character's own content; otherwise, use the EXACT fallback label.
+- Gender identity and sexual_orientation: only infer if explicitly stated or unambiguously implied; otherwise, use the EXACT fallback (with the minors rule below).
+
+Nationality vs. Residence interpretation (HARD RULE):
+- Employment, league membership (e.g., NBA), schooling, or current address imply RESIDENCE only.
+- Change NATIONALITY only when the character explicitly self-identifies it (e.g., “I am American”, “I'm from Russia”, “born in X”, “my passport is X”).
+- Otherwise, KEEP the fallback nationality exactly.
+
+Minors rule (MANDATORY):
+- If the final AGE < 13:
+  - gender_identity MUST be either "male" or "female" (no non-binary or transgender labels below 13).
+  - sexual_orientation MUST be "unspecified".
+  - The narrative MUST avoid adult topics (e.g., long-term employment, explicit romance). Keep school-, family-, and hobby-centered contexts.
+- If AGE is 13-17:
+  - All gender_identity labels are allowed, but keep content age-appropriate.
+  - sexual_orientation may be inferred cautiously if the text genuinely supports it; otherwise, use fallback. Do NOT sexualize minors.
+
+Post-adjustment consistency pass (MANDATORY):
+- If you adjusted AGE to ensure coherence, RE-APPLY the minors rule above.
+- If final AGE ≥ 13, you MUST NOT output "unspecified" for sexual_orientation.
+  * Prefer an orientation clearly supported by the character's own content.
+  * Otherwise use the fallback orientation; BUT if the fallback is "unspecified", set sexual_orientation to "heterosexual" (unless the character's own content clearly supports another label).
+
+Cultural-religious & context realism (guidance, not stereotypes):
+- In visual_appearance and environment, reflect plausible cues given nationality and/or residence_country (e.g., climate, architecture, common garments, workspaces).
+- When the country has strong religious or cultural norms around dress (e.g., hijab or modest wear), you may include such details ONLY if it fits plausibly with the character's own persona and the narrative tone. Always avoid stereotypes and allow individual variation.
+
+Mixed ancestry in narrative (optional, context-driven):
+- You may enrich the narrative with mixed ancestry ONLY when it makes sense:
+  * The character resides in a country different from nationality and the context suggests close cultural ties; OR
+  * The residence_country is among commonly multicultural destinations (e.g., USA, Canada, UK, France, Germany, Spain, Italy, Australia, New Zealand, UAE, Qatar, Kuwait, Saudi Arabia, Singapore, Brazil, Argentina, Mexico, South Africa).
+- DO NOT fabricate implausible combinations; keep it culturally and migrationally plausible (e.g., Japanese-Spanish in Spain; Filipino-UAE in UAE). This is a narrative nuance; the profile_struct still uses exactly one ethnicity label from the allowed list.
+- Do not change ethnicity merely to mirror residence_country.
+
+What You Receive:
+A JSON object with persona_id and persona, the original short persona text.
+Keep the stated city and occupation in personal_data, and use them as cues for environment and clothing where relevant.
+Treat "from <city>" as a location cue. Use the country containing that city where needed to ground the visual context; keep fallback nationality unless explicitly stated.
+Read the joined word "maleretail" as "male retail".
+Other narrative details are creative fictional enrichment.
+
+Profile Narrative Sections:
+1. personal_data (Factual biographical sentences only.)
+   - Full name (Choose a culturally plausible name consistent with NATIONALITY; a mixed-ancestry nuance is fine if the narrative supports it. Avoid mismatched names without support.)
+   - Age
+   - Gender identity
+   - Ethnicity
+   - Occupation
+   - Country or city of residence
+   - Relationship status
+   - Education level (optional but recommended)
+
+2. visual_appearance
+   - Hair type and color
+   - Skin tone
+   - Eye color
+   - Facial hair (if any)
+   - Glasses or accessories (and their style)
+   - Typical clothing
+   - Height and body type (optional)
+
+3. environment (Refer to plausible locations consistent with residence_country and city.)
+   - Where and how the character lives (urban/rural, apartment/house, etc.)
+   - Important objects, tools, or thematic items around them
+   - Hints about climate, culture, or geography
+   - Spaces tied to profession or hobbies (lab, kitchen, studio, gym, etc.)
+
+4. personality_attitudes
+   - Core personality traits (e.g. curious, reserved, energetic)
+   - Hobbies and passions
+   - Beliefs, values, or worldview
+   - Social behaviors
+   - Personal routines or goals
+
+5. other_details (optional)
+   - Memorable quirks or behaviors
+   - Catchphrases, expressions, or habits
+   - Backstory fragments or unusual facts
+   - Extra flavor that enriches the character
+
+Allowed labels (STRICT):
+- Ethnicity (choose EXACTLY one of the following labels):
+{VALID_ETHNICITIES}
+
+- Gender identity (choose EXACTLY one):
+{VALID_GENDER}
+
+- Sexual orientation (choose EXACTLY one; if AGE<13, it MUST be "unspecified"):
+{VALID_ORIENTATIONS}
+(Allowed special value for minors <13: "unspecified")
+
+- Nationality & residence_country:
+  * Must be a SINGLE standard country name (ISO 3166 / UN M49 English short name).
+  * Do NOT output cities, regions, provinces, or multiple values.
+  * If NOT inferable from the character's own content, you MUST set it to EXACTLY the FALLBACK value provided for that character below.
+  * residence_country may differ from nationality.
+
+Coherence rule (MANDATORY):
+- If a fallback conflicts with original content, adjust the fallback to the nearest coherent value (e.g., raise age; swap residence to match schooling/employment context; select a culturally plausible name).
+- DO NOT alter the original persona text or keys. Only adjust the fallback-derived attribute to ensure consistency.
+
+Requirements:
+- Each section in the profile must contain at least 5 full sentences, written in first person, non-repetitive, and rich in detail.
+- Preserve the exact numeric persona_id as received.
+- Avoid duplication: every sentence in a profile should add new detail.
+- The output must be suitable for visual generation and storytelling applications.
+
+What You Must Produce (STRICT JSON):
+{{
+  "persona_id": <integer>,
+  "profile_struct": {{
+    "age": <integer>,
+    "gender_identity": "<one of the allowed Gender identity labels>",
+    "sexual_orientation": "<one of the allowed Sexual orientation labels or 'unspecified' if AGE<13>",
+    "ethnicity": "<one of the allowed Ethnicity labels>",
+    "nationality": "<country>",
+    "residence_country": "<country>"
+  }},
+  "profile_narrative": {{
+    "personal_data": [ "..." ],
+    "visual_appearance": [ "..." ],
+    "environment": [ "..." ],
+    "personality_attitudes": [ "..." ],
+    "other_details": [ "..." ]
+  }}
+}}
+
+FALLBACK VALUES:
+{FALLBACK_JSON}
+
+<INPUT JSON BEGINS — DO NOT ALTER KEYS OR FIELDS>
+{INPUT_PERSONA_JSON}
