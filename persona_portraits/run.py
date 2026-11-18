@@ -9,6 +9,7 @@ import runpy
 import subprocess
 import sys
 import tempfile
+import unicodedata
 from datetime import datetime, timezone
 from pathlib import Path
 from urllib.error import HTTPError
@@ -139,6 +140,12 @@ def make_expansion(entry, fallback, config):
     )
 
 
+def normalized_words(text):
+    decomposed = unicodedata.normalize("NFKD", text.casefold())
+    unaccented = "".join(character for character in decomposed if not unicodedata.combining(character))
+    return " ".join(re.findall(r"\w+", unaccented))
+
+
 def validate_profile(profile, entry, config):
     if profile["persona_id"] != entry["persona_id"]:
         raise ValueError("Expanded persona ID differs from the source")
@@ -158,8 +165,8 @@ def validate_profile(profile, entry, config):
             allowed = {"unspecified"}
         if attributes[field] not in allowed:
             raise ValueError(f"Invalid {field}: {attributes[field]}")
-    biography = " ".join(profile["profile_narrative"]["personal_data"]).casefold()
-    if occupation.casefold() not in biography or location.casefold() not in biography:
+    biography = normalized_words(" ".join(profile["profile_narrative"]["personal_data"]))
+    if normalized_words(occupation) not in biography or normalized_words(location) not in biography:
         raise ValueError("Expanded biography must include the source occupation and location")
     for section in SECTIONS:
         details = profile["profile_narrative"][section]
@@ -205,11 +212,19 @@ def render(entry, fallback, config, out, request):
         metadata = {"source": source, "settings": settings, "synthetic_fallback": fallback}
 
     if "profile" not in metadata:
-        prompt = make_expansion(source, metadata["synthetic_fallback"], config)
-        text, usage, model = generate_text(request, prompt, structured=True)
-        profile = json.loads(text)
+        pending_path = path / "expansion_response.json"
+        if pending_path.exists():
+            pending = read_json(pending_path)
+        else:
+            prompt = make_expansion(source, metadata["synthetic_fallback"], config)
+            text, usage, model = generate_text(request, prompt, structured=True)
+            pending = {"source": source, "settings": settings, "text": text, "usage": usage, "model": model}
+            write_json(pending_path, pending)
+        if pending["source"] != source or pending["settings"] != settings:
+            raise ValueError("Saved expansion response has different inputs or settings")
+        profile = json.loads(pending["text"])
         validate_profile(profile, source, config)
-        metadata.update(profile=profile, expansion_usage=usage, expansion_model=model)
+        metadata.update(profile=profile, expansion_usage=pending["usage"], expansion_model=pending["model"])
         write_json(metadata_path, metadata)
 
     return "enhanced generated"
