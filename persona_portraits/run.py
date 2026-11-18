@@ -143,7 +143,8 @@ def make_expansion(entry, fallback, config):
 def normalized_words(text):
     decomposed = unicodedata.normalize("NFKD", text.casefold())
     unaccented = "".join(character for character in decomposed if not unicodedata.combining(character))
-    return " ".join(re.findall(r"\w+", unaccented))
+    words = re.findall(r"\w+", unaccented)
+    return " ".join("laboratory" if word == "lab" else word for word in words)
 
 
 def validate_profile(profile, entry, config):
